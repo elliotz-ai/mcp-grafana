@@ -31,10 +31,12 @@ func newAssertsClient(ctx context.Context) (*Client, error) {
 
 	client := &http.Client{
 		Transport: &authRoundTripper{
-			apiKey:      cfg.APIKey,
-			accessToken: cfg.AccessToken,
-			idToken:     cfg.IDToken,
-			underlying:  transport,
+			apiKey:               cfg.APIKey,
+			accessToken:          cfg.AccessToken,
+			idToken:              cfg.IDToken,
+			cfAccessClientID:     cfg.CFAccessClientID,
+			cfAccessClientSecret: cfg.CFAccessClientSecret,
+			underlying:           transport,
 		},
 	}
 

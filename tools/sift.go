@@ -123,10 +123,12 @@ func newSiftClient(cfg mcpgrafana.GrafanaConfig) (*siftClient, error) {
 
 	client := &http.Client{
 		Transport: &authRoundTripper{
-			accessToken: cfg.AccessToken,
-			idToken:     cfg.IDToken,
-			apiKey:      cfg.APIKey,
-			underlying:  transport,
+			accessToken:          cfg.AccessToken,
+			idToken:              cfg.IDToken,
+			apiKey:               cfg.APIKey,
+			cfAccessClientID:     cfg.CFAccessClientID,
+			cfAccessClientSecret: cfg.CFAccessClientSecret,
+			underlying:           transport,
 		},
 	}
 	return &siftClient{

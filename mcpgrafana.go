@@ -70,6 +70,11 @@ type GrafanaConfig struct {
 	// It is used for on-behalf-of auth in Grafana Cloud.
 	IDToken string
 
+	// CFAccessClientID is the Cloudflare Access Client ID for authenticating with CF-protected Grafana instances.
+	CFAccessClientID string
+	// CFAccessClientSecret is the Cloudflare Access Client Secret for authenticating with CF-protected Grafana instances.
+	CFAccessClientSecret string
+
 	// TLSConfig holds TLS configuration for all Grafana clients.
 	TLSConfig *TLSConfig
 }
@@ -138,6 +143,33 @@ func (tc *TLSConfig) HTTPTransport(defaultTransport *http.Transport) (http.Round
 	return transport, nil
 }
 
+// cfAccessRoundTripper adds Cloudflare Access headers to all requests
+type cfAccessRoundTripper struct {
+	clientID     string
+	clientSecret string
+	underlying   http.RoundTripper
+}
+
+func (rt *cfAccessRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if rt.clientID != "" && rt.clientSecret != "" {
+		req.Header.Set("CF-Access-Client-Id", rt.clientID)
+		req.Header.Set("CF-Access-Client-Secret", rt.clientSecret)
+	}
+	return rt.underlying.RoundTrip(req)
+}
+
+// WithCFAccessHeaders wraps a RoundTripper to add Cloudflare Access headers
+func WithCFAccessHeaders(rt http.RoundTripper, clientID, clientSecret string) http.RoundTripper {
+	if clientID == "" || clientSecret == "" {
+		return rt
+	}
+	return &cfAccessRoundTripper{
+		clientID:     clientID,
+		clientSecret: clientSecret,
+		underlying:   rt,
+	}
+}
+
 // ExtractGrafanaInfoFromEnv is a StdioContextFunc that extracts Grafana configuration
 // from environment variables and injects a configured client into the context.
 var ExtractGrafanaInfoFromEnv server.StdioContextFunc = func(ctx context.Context) context.Context {
@@ -149,13 +181,21 @@ var ExtractGrafanaInfoFromEnv server.StdioContextFunc = func(ctx context.Context
 	if err != nil {
 		panic(fmt.Errorf("invalid Grafana URL %s: %w", u, err))
 	}
-	slog.Info("Using Grafana configuration", "url", parsedURL.Redacted(), "api_key_set", apiKey != "")
+	
+	// Get CF Access credentials from environment
+	cfAccessClientID := os.Getenv("GRAFANA_CF_ACCESS_CLIENT_ID")
+	cfAccessClientSecret := os.Getenv("GRAFANA_CF_ACCESS_CLIENT_SECRET")
+	
+	slog.Info("Using Grafana configuration", "url", parsedURL.Redacted(), "api_key_set", apiKey != "", 
+		"cf_access_configured", cfAccessClientID != "" && cfAccessClientSecret != "")
 
 	// Get existing config or create a new one.
 	// This will respect the existing debug flag, if set.
 	config := GrafanaConfigFromContext(ctx)
 	config.URL = u
 	config.APIKey = apiKey
+	config.CFAccessClientID = cfAccessClientID
+	config.CFAccessClientSecret = cfAccessClientSecret
 	return WithGrafanaConfig(ctx, config)
 }
 
@@ -260,6 +300,16 @@ func NewGrafanaClient(ctx context.Context, grafanaURL, apiKey string) *client.Gr
 			"skip_verify", tlsConfig.SkipVerify)
 	}
 
+	// Add Cloudflare Access headers if configured
+	if config.CFAccessClientID != "" && config.CFAccessClientSecret != "" {
+		if cfg.HTTPHeaders == nil {
+			cfg.HTTPHeaders = make(map[string]string)
+		}
+		cfg.HTTPHeaders["CF-Access-Client-Id"] = config.CFAccessClientID
+		cfg.HTTPHeaders["CF-Access-Client-Secret"] = config.CFAccessClientSecret
+		slog.Debug("Adding Cloudflare Access headers")
+	}
+
 	slog.Debug("Creating Grafana client", "url", parsedURL.Redacted(), "api_key_set", apiKey != "")
 	return client.NewHTTPClientWithConfig(strfmt.Default, cfg)
 }
@@ -330,18 +380,23 @@ var ExtractIncidentClientFromEnv server.StdioContextFunc = func(ctx context.Cont
 	client := incident.NewClient(incidentURL, apiKey)
 
 	// Configure custom TLS if available
-	if tlsConfig := GrafanaConfigFromContext(ctx).TLSConfig; tlsConfig != nil {
-		transport, err := tlsConfig.HTTPTransport(http.DefaultTransport.(*http.Transport))
+	config := GrafanaConfigFromContext(ctx)
+	transport := http.DefaultTransport
+	if tlsConfig := config.TLSConfig; tlsConfig != nil {
+		customTransport, err := tlsConfig.HTTPTransport(http.DefaultTransport.(*http.Transport))
 		if err != nil {
 			slog.Error("Failed to create custom transport for incident client, using default", "error", err)
 		} else {
-			client.HTTPClient.Transport = transport
+			transport = customTransport
 			slog.Debug("Using custom TLS configuration for incident client",
 				"cert_file", tlsConfig.CertFile,
 				"ca_file", tlsConfig.CAFile,
 				"skip_verify", tlsConfig.SkipVerify)
 		}
 	}
+	
+	// Wrap transport with CF Access headers if configured
+	client.HTTPClient.Transport = WithCFAccessHeaders(transport, config.CFAccessClientID, config.CFAccessClientSecret)
 
 	return context.WithValue(ctx, incidentClientKey{}, client)
 }
@@ -362,18 +417,23 @@ var ExtractIncidentClientFromHeaders httpContextFunc = func(ctx context.Context,
 	client := incident.NewClient(incidentURL, apiKey)
 
 	// Configure custom TLS if available
-	if tlsConfig := GrafanaConfigFromContext(ctx).TLSConfig; tlsConfig != nil {
-		transport, err := tlsConfig.HTTPTransport(http.DefaultTransport.(*http.Transport))
+	config := GrafanaConfigFromContext(ctx)
+	transport := http.DefaultTransport
+	if tlsConfig := config.TLSConfig; tlsConfig != nil {
+		customTransport, err := tlsConfig.HTTPTransport(http.DefaultTransport.(*http.Transport))
 		if err != nil {
 			slog.Error("Failed to create custom transport for incident client, using default", "error", err)
 		} else {
-			client.HTTPClient.Transport = transport
+			transport = customTransport
 			slog.Debug("Using custom TLS configuration for incident client",
 				"cert_file", tlsConfig.CertFile,
 				"ca_file", tlsConfig.CAFile,
 				"skip_verify", tlsConfig.SkipVerify)
 		}
 	}
+	
+	// Wrap transport with CF Access headers if configured
+	client.HTTPClient.Transport = WithCFAccessHeaders(transport, config.CFAccessClientID, config.CFAccessClientSecret)
 
 	return context.WithValue(ctx, incidentClientKey{}, client)
 }

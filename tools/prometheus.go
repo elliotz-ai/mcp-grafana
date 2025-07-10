@@ -49,6 +49,19 @@ func promClientFromContext(ctx context.Context, uid string) (promv1.API, error) 
 		rt = customTransport
 	}
 
+	// Add Cloudflare Access headers if configured
+	if cfg.CFAccessClientID != "" && cfg.CFAccessClientSecret != "" {
+		headers := map[string]config.Header{
+			"CF-Access-Client-Id": {
+				Values: []string{cfg.CFAccessClientID},
+			},
+			"CF-Access-Client-Secret": {
+				Secrets: []config.Secret{config.Secret(cfg.CFAccessClientSecret)},
+			},
+		}
+		rt = config.NewHeadersRoundTripper(&config.Headers{Headers: headers}, rt)
+	}
+
 	if cfg.AccessToken != "" && cfg.IDToken != "" {
 		rt = config.NewHeadersRoundTripper(&config.Headers{
 			Headers: map[string]config.Header{

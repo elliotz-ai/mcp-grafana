@@ -288,10 +288,12 @@ func newPyroscopeClient(ctx context.Context, uid string) (*pyroscopeClient, erro
 	cfg := mcpgrafana.GrafanaConfigFromContext(ctx)
 	httpClient := &http.Client{
 		Transport: &authRoundTripper{
-			accessToken: cfg.AccessToken,
-			idToken:     cfg.IDToken,
-			apiKey:      cfg.APIKey,
-			underlying:  http.DefaultTransport,
+			accessToken:          cfg.AccessToken,
+			idToken:              cfg.IDToken,
+			apiKey:               cfg.APIKey,
+			cfAccessClientID:     cfg.CFAccessClientID,
+			cfAccessClientSecret: cfg.CFAccessClientSecret,
+			underlying:           http.DefaultTransport,
 		},
 		Timeout: 10 * time.Second,
 	}

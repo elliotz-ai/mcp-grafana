@@ -66,10 +66,12 @@ func newLokiClient(ctx context.Context, uid string) (*Client, error) {
 
 	client := &http.Client{
 		Transport: &authRoundTripper{
-			accessToken: cfg.AccessToken,
-			idToken:     cfg.IDToken,
-			apiKey:      cfg.APIKey,
-			underlying:  transport,
+			accessToken:          cfg.AccessToken,
+			idToken:              cfg.IDToken,
+			apiKey:               cfg.APIKey,
+			cfAccessClientID:     cfg.CFAccessClientID,
+			cfAccessClientSecret: cfg.CFAccessClientSecret,
+			underlying:           transport,
 		},
 	}
 
@@ -176,10 +178,12 @@ func (c *Client) fetchData(ctx context.Context, urlPath string, startRFC3339, en
 }
 
 type authRoundTripper struct {
-	accessToken string
-	idToken     string
-	apiKey      string
-	underlying  http.RoundTripper
+	accessToken          string
+	idToken              string
+	apiKey               string
+	cfAccessClientID     string
+	cfAccessClientSecret string
+	underlying           http.RoundTripper
 }
 
 func (rt *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -188,6 +192,12 @@ func (rt *authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error)
 		req.Header.Set("X-Grafana-Id", rt.idToken)
 	} else if rt.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+rt.apiKey)
+	}
+
+	// Add Cloudflare Access headers if configured
+	if rt.cfAccessClientID != "" && rt.cfAccessClientSecret != "" {
+		req.Header.Set("CF-Access-Client-Id", rt.cfAccessClientID)
+		req.Header.Set("CF-Access-Client-Secret", rt.cfAccessClientSecret)
 	}
 
 	resp, err := rt.underlying.RoundTrip(req)

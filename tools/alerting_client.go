@@ -21,11 +21,13 @@ const (
 )
 
 type alertingClient struct {
-	baseURL     *url.URL
-	accessToken string
-	idToken     string
-	apiKey      string
-	httpClient  *http.Client
+	baseURL              *url.URL
+	accessToken          string
+	idToken              string
+	apiKey               string
+	cfAccessClientID     string
+	cfAccessClientSecret string
+	httpClient           *http.Client
 }
 
 func newAlertingClientFromContext(ctx context.Context) (*alertingClient, error) {
@@ -37,10 +39,12 @@ func newAlertingClientFromContext(ctx context.Context) (*alertingClient, error) 
 	}
 
 	client := &alertingClient{
-		baseURL:     parsedBaseURL,
-		accessToken: cfg.AccessToken,
-		idToken:     cfg.IDToken,
-		apiKey:      cfg.APIKey,
+		baseURL:              parsedBaseURL,
+		accessToken:          cfg.AccessToken,
+		idToken:              cfg.IDToken,
+		apiKey:               cfg.APIKey,
+		cfAccessClientID:     cfg.CFAccessClientID,
+		cfAccessClientSecret: cfg.CFAccessClientSecret,
 		httpClient: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -74,6 +78,12 @@ func (c *alertingClient) makeRequest(ctx context.Context, path string) (*http.Re
 		req.Header.Set("X-Grafana-Id", c.idToken)
 	} else if c.apiKey != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
+	}
+
+	// Add Cloudflare Access headers if configured
+	if c.cfAccessClientID != "" && c.cfAccessClientSecret != "" {
+		req.Header.Set("CF-Access-Client-Id", c.cfAccessClientID)
+		req.Header.Set("CF-Access-Client-Secret", c.cfAccessClientSecret)
 	}
 
 	resp, err := c.httpClient.Do(req)

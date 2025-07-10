@@ -29,6 +29,13 @@ func getOnCallURLFromSettings(ctx context.Context, grafanaURL, grafanaAPIKey str
 		req.Header.Set("Authorization", "Bearer "+grafanaAPIKey)
 	}
 
+	// Add CF Access headers from context if available
+	cfg := mcpgrafana.GrafanaConfigFromContext(ctx)
+	if cfg.CFAccessClientID != "" && cfg.CFAccessClientSecret != "" {
+		req.Header.Set("CF-Access-Client-Id", cfg.CFAccessClientID)
+		req.Header.Set("CF-Access-Client-Secret", cfg.CFAccessClientSecret)
+	}
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetching settings: %w", err)
